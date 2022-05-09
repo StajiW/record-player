@@ -4,20 +4,23 @@ export class AnimationPlayer {
     sequence: Sequence | null = null
     index: number = 0
     time: number = 0
+    callback: (() => any) | null = null
 
-    play(sequence: Sequence) {
-        if (sequence.length > 0) {
-            this.sequence = sequence
-            this.index = 0
-            this.time = 0
-        }
+    play(sequence: Sequence, callback?: () => any) {
+        // Don't allow 2 animations at the same time
+        if (this.sequence !== null) return
+
+        if (sequence.length === 0) return
+            
+        this.sequence = sequence
+        this.index = 0
+        this.time = 0
+        if (callback) this.callback = callback
     }
 
     step(p: p5) {
         if (!this.sequence) return
 
-        
-        
         let onGoing = false
         const transitions = this.sequence[this.index]
 
@@ -32,19 +35,36 @@ export class AnimationPlayer {
 
             if (this.index >= this.sequence.length) {
                 this.sequence = null
+                if (this.callback) this.callback()
             }
         }
 
         this.time += p.deltaTime / 1000
     }
 
+    // This is now officially a dirty hack
     transitionStep(transition: Transition): boolean {
         if (this.time < (transition.delay || 0)) return true
         const time = this.time - (transition.delay || 0)
         if (time > transition.duration) return false
 
         if (transition.from === undefined) transition.from = transition.variable.value
-        transition.variable.value = this.getSmoothValue(transition.from, transition.to, time / transition.duration)
+
+        if (Array.isArray(transition.from) && Array.isArray(transition.to)) {
+            if (transition.from.length !== transition.to.length) throw 'array length mismatch'
+            if (!Array.isArray(transition.variable.value)) throw 'array / variable mismatch'
+
+            for (let i = 0; i < transition.from.length; i++) {
+                transition.variable.value[i] = this.getSmoothValue(transition.from[i], transition.to[i], time / transition.duration)
+            }
+        }
+        else if (!Array.isArray(transition.from) && !Array.isArray(transition.to)) {
+            if (Array.isArray(transition.variable.value)) throw 'array / variable mismatch'
+            transition.variable.value = this.getSmoothValue(transition.from, transition.to, time / transition.duration)
+        }
+        else {
+            throw 'array / variable mismatch'
+        }
         
         return true
     }
@@ -57,13 +77,15 @@ export class AnimationPlayer {
     }
 }
 
-export class Animatable {
-    value: number
+export class Animatable<X> {
+    value: X
 
-    constructor(value: number) {
+    constructor(value: X) {
         this.value = value
     }
 }
+
+type X = number | number[]
 
 enum Timing {
     Linear,
@@ -73,9 +95,9 @@ enum Timing {
 export type Sequence = Transition[][]
 
 export type Transition = {
-    variable: Animatable,
-    from?: number,
-    to: number,
+    variable: Animatable<X>,
+    from?: number | number[],
+    to: number | number[],
     duration: number,
     delay?: number,
     timing?: Timing

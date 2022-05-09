@@ -2,34 +2,34 @@ import p5 from 'p5'
 import ColorThief from 'colorthief'
 const colorThief = new ColorThief()
 import { Collection, Box, Cylinder, Circle } from './primitives'
-import { Animatable, Sequence, AnimationPlayer, Transition  } from './animation'
+import { Animatable, Sequence, AnimationPlayer  } from './animation'
+import { Color }  from './util'
 
 const frameRate = 60
-
-type Color = [number, number, number]
 
 export default class Sketch {
     p: p5 | null = null
     animationPlayer: AnimationPlayer = new AnimationPlayer()
 
-    backgroundColor: Color = [255, 255, 255]
-    lineColor: Color = [0, 0, 0]
+    backgroundColor: Animatable<Color> = new Animatable([255, 255, 255])
+    lineColor: Animatable<Color> = new Animatable([0, 0, 0])
     progress: number = 0
-    cover: p5.Image | null = null
 
+    recordSpin: number = 0
+    tempRecordSpin: number = 0
+    record: Vinyl = new Vinyl(this.backgroundColor.value, this.lineColor.value)
+    tempRecord: Vinyl | null = new Vinyl(this.lineColor.value, this.backgroundColor.value)
 
-    recordPositionY: Animatable = new Animatable(-10)
-    recordRotationX: Animatable = new Animatable(Math.PI / 2)
-    recordSpeed: Animatable = new Animatable(1)
-    pinHeight: Animatable = new Animatable(-10)
-    armPosition: Animatable = new Animatable(-0.22)
-    armHeight: Animatable = new Animatable(-0.06)
-    animation: Sequence = [
+    recordPositionY:    Animatable<number> = new Animatable(-10)
+    recordRotationX:    Animatable<number> = new Animatable(Math.PI / 2)
+    recordSpeed:        Animatable<number> = new Animatable(1)
+    pinHeight:          Animatable<number> = new Animatable(-10)
+    armPosition:        Animatable<number> = new Animatable(-0.22)
+    armHeight:          Animatable<number> = new Animatable(-0.06)
+    animation = (newBackgroundColor: Color, newlineColor: Color) => { return [
         [
-            { variable: this.recordSpeed, to: 0, duration: 0.5 }
-        ],
-        [
-            { variable: this.armHeight, to: 0, duration: 0.3 }
+            { variable: this.recordSpeed, to: 0, duration: 0.8 },
+            { variable: this.armHeight, to: 0, duration: 0.3, delay: 0.6 }
         ],
         [
             { variable: this.armPosition, to: 0, duration: 1 },
@@ -37,11 +37,13 @@ export default class Sketch {
             { variable: this.pinHeight, to: 10, duration: 1 }
         ],
         [
-            { variable: this.recordPositionY, to: -100, duration: 1 },
-            { variable: this.recordRotationX, to: this.recordRotationX.value - Math.PI, duration: 1.5, delay: 0.25 },
-            { variable: this.recordPositionY, to: 0, duration: 0.6, delay: 1.4 }
+            { variable: this.recordPositionY, to: -100, duration: 1.2 },
+            { variable: this.recordRotationX, to: this.recordRotationX.value - Math.PI, duration: 1.5, delay: 0.2 },
+            { variable: this.recordPositionY, to: 0, duration: 0.3, delay: 1.5 }
         ], [
-            { variable: this.recordPositionY, to: -10, duration: 0.3  }
+            { variable: this.recordPositionY, to: -10, duration: 0.3  },
+            { variable: this.backgroundColor, to: newBackgroundColor, duration: 0.3 },
+            { variable: this.lineColor, to: newlineColor, duration: 0.3 }
         ],
         [
             { variable: this.armHeight, to: 0, duration: 0.3 },
@@ -49,9 +51,12 @@ export default class Sketch {
             { variable: this.pinHeight, to: -10, duration: 1 }
         ],
         [
-            { variable: this.armHeight, to: -0.06, duration: 0.3 }
+            { variable: this.armHeight, to: -0.06, duration: 0.3 },
         ],
-    ]
+        [
+            { variable: this.recordSpeed, to: -1, duration: 0.8 }
+        ]
+    ]}
 
 
 
@@ -67,11 +72,7 @@ export default class Sketch {
             cover = image
 
             if (backgroundColor && lineColor) {
-                this.cover = cover
-                this.backgroundColor = backgroundColor
-                this.lineColor = lineColor
-                this.progress = progress
-                setTimeout(() => this.animationPlayer.play(this.animation), 1000)
+                this.updateCover(cover, backgroundColor, lineColor)
             }
         })
 
@@ -92,13 +93,24 @@ export default class Sketch {
             }
 
             if (cover) {
-                this.cover = cover
-                this.backgroundColor = backgroundColor
-                this.lineColor = lineColor
-                this.progress = progress
-                setTimeout(() => this.animationPlayer.play(this.animation), 1000)
+                this.updateCover(cover, backgroundColor, lineColor)
             }
         }
+    }
+
+    updateCover(cover: p5.Image, backgroundColor: Color, lineColor: Color) {
+        this.tempRecordSpin = -this.recordSpin
+        this.tempRecord = new Vinyl(backgroundColor, lineColor, cover)
+
+        this.animationPlayer.play(this.animation(backgroundColor, lineColor), () => {
+            if (this.tempRecord) {
+                this.record = this.tempRecord
+                this.recordRotationX.value = Math.PI / 2
+                this.recordSpeed.value = 1
+                this.recordSpin = this.tempRecordSpin
+            }
+            this.tempRecord = null
+        })
     }
 
     setProgress = (progress: number) => {
@@ -114,28 +126,22 @@ export default class Sketch {
         }
 
         p.draw = () => {
-            const backgroundColor = p.color(this.backgroundColor)
-            const lineColor = p.color(this.lineColor)
-
-            p.background(this.backgroundColor)
+            p.background(this.backgroundColor.value)
             p.scale(2)
+            
 
             this.animationPlayer.step(p)
+
+            this.recordSpin += p.deltaTime / 1000 / 60 * 33.33 * this.recordSpeed.value
+            this.tempRecordSpin -= p.deltaTime / 1000 / 60 * 33.33 * this.recordSpeed.value
             
-            const collection = new Collection([
+            const player = new Collection([
                 new Box([220, 20, 200], { noFill: true, strokeWeight: 5 }),
                 // Pin
-                new Cylinder([1, 8], { position: [-10, this.pinHeight.value, 0], fill: backgroundColor, noStroke: true }),
+                new Cylinder([1, 8], { position: [-10, this.pinHeight.value, 0], fill: this.backgroundColor.value, noStroke: true }),
                 // Vinyl
-                new Collection([
-                    new Circle(55, { fill: backgroundColor, position: [0, 0, -0.02], noStroke: true }),
-                    new Circle(50, { fill: lineColor, position: [0, 0, -0.03], noStroke: true }),
-                    new Circle(3, { fill: backgroundColor, position: [0, 0, -0.04], noStroke: true }),
-                    new Circle(180, { fill: this.cover ? undefined : p.color(255), texture: this.cover || undefined, position: [0, 0, 0.01], strokeWeight: 8 }),
-                    new Circle(55, { fill: backgroundColor, position: [0, 0, 0.02], noStroke: true }),
-                    new Circle(50, { fill: lineColor, position: [0, 0, 0.03], noStroke: true }),
-                    new Circle(3, { fill: backgroundColor, position: [0, 0, 0.04], noStroke: true })
-                ], { position: [-10, this.recordPositionY.value, 0], rotation: [this.recordRotationX.value, 0, p.frameCount * (1 / frameRate) / 60 * 33.33] }),
+                this.record,
+                this.tempRecord ? this.tempRecord : null,
                 // Arm
                 new Collection([
                     new Cylinder([10, 5], { position: [0, -2.5, 0] }),
@@ -145,18 +151,39 @@ export default class Sketch {
                         new Cylinder([5, 8], { position: [0, 0, -10], rotation: [p.HALF_PI, 0, 0] }),
                         new Box([6, 3, 12], { position: [0, 2, 60 + 140 / 2 - 12 / 2] })
                     // ], { position: [0, -10, 0], rotation: [-0.06, p.map(0, 0, 1, -0.23, -0.65), 0] })
-                ], { position: [0, -10, 0], rotation: [this.armHeight.value, this.armPosition.value, 0] })
-                ], { position: [90, -10, -80], fill: lineColor, noStroke: true })
+                    ], { position: [0, -10, 0], rotation: [this.armHeight.value, this.armPosition.value, 0] })
+                ], { position: [90, -10, -80], fill: this.lineColor.value, noStroke: true })
             ], {
-                rotation: [-0.4, 0.001 * p.frameCount, 0],
-                stroke: lineColor
+                rotation: [-0.4, -0.2, 0],
+                stroke: this.lineColor.value
             })
+
+            this.record.update(this.recordSpin, this.recordPositionY.value, this.recordRotationX.value)
+            if (this.tempRecord) {
+                this.tempRecord.update(this.tempRecordSpin, this.recordPositionY.value, this.recordRotationX.value + p.PI)
+            }
             
-            collection.draw(p)
+            player.draw(p)
         }
 
         p.windowResized = () => {
             p.resizeCanvas(p.windowWidth, p.windowHeight)
         }
+    }
+}
+
+class Vinyl extends Collection {
+    constructor(backgroundColor: Color, lineColor: Color, cover?: p5.Image) {
+        super([
+            new Circle(180, { fill: cover ? undefined : backgroundColor, texture: cover || undefined, position: [0, 0, 0.01], stroke: lineColor, strokeWeight: 8 }),
+            new Circle(55, { fill: backgroundColor, position: [0, 0, 0.02], noStroke: true }),
+            new Circle(50, { fill: lineColor, position: [0, 0, 0.03], noStroke: true }),
+            new Circle(3, { fill: backgroundColor, position: [0, 0, 0.04], noStroke: true })
+        ])
+    }
+
+    update(spin: number, positionY: number, rotationX: number) {
+        this.position = [-10, positionY, 0]
+        this.rotation = [rotationX, 0, spin]
     }
 }

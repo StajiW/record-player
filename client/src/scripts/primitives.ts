@@ -1,14 +1,15 @@
 import p5 from 'p5'
+import { Color }  from './util'
 
 type Vector2 = [number, number]
 type Vector3 = [number, number, number]
 
-type Options = {
+export type Options = {
     position?: Vector3,
     rotation?: Vector3,
-    fill?: p5.Color,
+    fill?: Color,
     noFill?: boolean,
-    stroke?: p5.Color,
+    stroke?: Color,
     strokeWeight?: number,
     noStroke?: boolean
     texture?: p5.Image,
@@ -17,9 +18,9 @@ type Options = {
 export class Object {
     position: Vector3 = [0, 0, 0]
     rotation: Vector3 = [0, 0, 0]
-    fill: p5.Color | null = null
+    fill: Color | null = null
     noFill: boolean = false
-    stroke: p5.Color | null = null
+    stroke: Color | null = null
     strokeWeight: number | null = null
     noStroke: boolean = false
     texture: p5.Image | null = null
@@ -55,16 +56,16 @@ export class Object {
 }
 
 export class Collection extends Object {
-    children: Object[]
+    children: (Object | null)[]
 
-    constructor(children: Object[], options?: Options) {
+    constructor(children: (Object | null)[], options?: Options) {
         super(options)
         this.children = children
     }
 
     draw(p: p5) {
         super.draw(p, () => {
-            this.children.forEach(child => child.draw(p))
+            this.children.forEach(child => { if (child !== null) child.draw(p) })
         })
     }
 }
